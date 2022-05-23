@@ -11,6 +11,7 @@ export interface CompressOptions {
   brotliOptions?: BrotliOptions;
   removeOrigin?: boolean;
   outputDir?: string;
+  verbose?: boolean;
   // TODO:
   // exclude?: string | string[];
   // sync?: boolean;
@@ -25,18 +26,26 @@ const writeGzipCompress = (
   path: string,
   contents: Uint8Array,
   options: ZlibOptions = {}
-) => {
+): string => {
+  const outPath = `${path}.gz`;
+  const stat = fs.statSync(path);
   const gzipped = gzipSync(contents, options);
-  fs.writeFileSync(`${path}.gz`, gzipped);
+  if (gzipped.length >= stat.size) return null;
+  fs.writeFileSync(outPath, gzipped);
+  return outPath;
 };
 
 const writeBrotliCompress = (
   path: string,
   contents: Uint8Array,
   options: BrotliOptions = {}
-) => {
+): string => {
+  const outPath = `${path}.br`;
+  const stat = fs.statSync(path);
   const gzipped = brotliCompressSync(contents, options);
-  fs.writeFileSync(`${path}.br`, gzipped);
+  if (gzipped.length >= stat.size) return null;
+  fs.writeFileSync(outPath, gzipped);
+  return outPath;
 };
 
 export const compress = (options: CompressOptions = {}): Plugin => {
@@ -72,8 +81,10 @@ export const compress = (options: CompressOptions = {}): Plugin => {
         outputDir = path.resolve(outdir, outputDir);
       }
 
-      onEnd(async ({ outputFiles }) => {
-        for (const { path: originOutputPath, contents } of outputFiles) {
+      onEnd(async ({ metafile: { outputs } }) => {
+        for (const originOutputPath of Object.keys(outputs)) {
+          const contents = await fs.promises.readFile(originOutputPath);
+
           const writrPath = outputDir
             ? path.resolve(outputDir, path.basename(originOutputPath))
             : originOutputPath;
@@ -91,10 +102,23 @@ export const compress = (options: CompressOptions = {}): Plugin => {
             fs.ensureDirSync(path.dirname(writrPath));
           }
 
-          gzip ? writeGzipCompress(writrPath, contents, gzipOpts) : void 0;
-          brotli
-            ? writeBrotliCompress(writrPath, contents, brotliOpts)
-            : void 0;
+          const oriStat = fs.statSync(writrPath);
+
+          if (gzip) {
+            const outPath = writeGzipCompress(writrPath, contents, gzipOpts);
+            if (outPath && options.verbose) {
+              const stat = fs.statSync(outPath);
+              console.log('generated', outPath, humanSize(oriStat.size) + ' -> ' + humanSize(stat.size))
+            }
+          }
+
+          if (brotli) {
+            const outPath = writeBrotliCompress(writrPath, contents, brotliOpts)
+            if (outPath && options.verbose) {
+              const stat = fs.statSync(outPath);
+              console.log('generated', outPath, humanSize(oriStat.size) + ' -> ' + humanSize(stat.size))
+            }
+          }
 
           if (!removeOrigin || noCompressSpecified) {
             writeOriginFiles(originOutputPath, contents);
@@ -104,3 +128,14 @@ export const compress = (options: CompressOptions = {}): Plugin => {
     },
   };
 };
+
+function humanSize(size) {
+  if (size < 1024) {
+    return size + 'B';
+  } else if (size < 1024**2) {
+    return Math.round(size/1024) + 'K';
+  } else if (size < 1024**3) {
+    return Math.round(size/1024**2) + 'M';
+  }
+  return Math.round(size/1024**3) + 'G';
+}
