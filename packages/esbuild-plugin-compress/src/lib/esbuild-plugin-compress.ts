@@ -133,9 +133,9 @@ function humanSize(size) {
   if (size < 1024) {
     return size + 'B';
   } else if (size < 1024**2) {
-    return Math.round(size/1024) + 'K';
-  } else if (size < 1024**3) {
-    return Math.round(size/1024**2) + 'M';
+    return (size / 1024).toFixed(2) + 'K';
+  } else if (size < 1024 ** 3) {
+    return (size / 1024 ** 2).toFixed(2) + 'M';
   }
-  return Math.round(size/1024**3) + 'G';
+  return (size / 1024 ** 3).toFixed(2) + 'G';
 }
